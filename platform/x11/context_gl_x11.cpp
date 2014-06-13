@@ -36,6 +36,8 @@
 
 #include <GL/glx.h>
 
+#include <X11/extensions/xf86vmode.h>
+
 #define GLX_CONTEXT_MAJOR_VERSION_ARB		0x2091
 #define GLX_CONTEXT_MINOR_VERSION_ARB		0x2092
 
@@ -45,6 +47,32 @@ struct ContextGL_X11_Private {
 
 	::GLXContext glx_context;
 };
+
+typedef struct {
+
+    unsigned long   flags;
+    unsigned long   functions;
+    unsigned long   decorations;
+    long            inputMode;
+    unsigned long   status;
+
+} X11MotivHints;
+
+X11MotivHints           x11MotivHints;
+Atom                    xiaNewProperty;
+XF86VidModeModeInfo     **vidModes;
+int                     vidModeBest;
+int                     vidModeCount;
+int                     windowWidth;
+int                     windowHeight;
+int                     dpyWidth;
+int                     dpyHeight;
+GLXContext              context;
+XSetWindowAttributes    winAttr;
+Colormap                cmap;
+int glxMajor, glxMinor, vmMajor, vmMinor;
+XF86VidModeModeInfo     desktopMode;
+int screenBackup;
 
 
 void ContextGL_X11::release_current() {
@@ -117,7 +145,81 @@ Error ContextGL_X11::initialize() {
 		x11_window = atol(windowid);
 	} else {
 	*/
-		x11_window = XCreateWindow(x11_display, RootWindow(x11_display, vi->screen), 0, 0, OS::get_singleton()->get_video_mode().width, OS::get_singleton()->get_video_mode().height, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel|CWColormap|CWEventMask, &swa);
+
+    x11MotivHints.flags         = 2;
+    x11MotivHints.decorations   = 0;
+    xiaNewProperty              = XInternAtom( x11_display,"_MOTIF_WM_HINTS", True );
+    vidModeBest                 = 0;
+    vidModeCount                = 0;
+    windowWidth                 = 1024;
+    windowHeight                = 768;
+    dpyWidth                    = 0;
+    dpyHeight                   = 0;
+    screenBackup                = vi->screen;
+
+    XF86VidModeGetAllModeLines( x11_display, vi->screen, &vidModeCount, &vidModes );
+
+    printf("Debug: vidModeCount=%d\n", vidModeCount );
+
+    desktopMode = *vidModes[ 0 ];
+
+    for ( int i = 0; i < vidModeCount; i++ ){
+
+        if (( vidModes[i]->hdisplay == windowWidth) && ( vidModes[i]->vdisplay == windowHeight ))
+                    vidModeBest = i;
+
+    }
+
+    printf("vidModeBest=%d\n",vidModeBest);
+
+    glXQueryVersion(    x11_display, &glxMajor, &glxMinor                 );
+    printf(             "Debug: GLX-Version %d.%d\n", glxMajor, glxMinor  );
+
+    context                 = glXCreateContext( x11_display, vi, 0, GL_TRUE                                                 );
+    cmap                    = XCreateColormap(  x11_display, RootWindow( x11_display, vi->screen ), vi->visual, AllocNone   );
+    winAttr.colormap        = cmap;
+    winAttr.border_pixel    = 0;
+
+    XChangeProperty(            x11_display, RootWindow( x11_display, vi->screen ), xiaNewProperty, xiaNewProperty, 32, PropModeReplace, ( unsigned char * ) &x11MotivHints, 5        );
+    XF86VidModeSwitchToMode(    x11_display, vi->screen, vidModes[ vidModeBest ]                                                                                                        );
+    XF86VidModeSetViewPort(     x11_display, vi->screen, 0, 0                                                                                                                         );
+    XMoveResizeWindow(          x11_display, RootWindow( x11_display, vi->screen ), 0, 0, OS::get_singleton()->get_video_mode().width, OS::get_singleton()->get_video_mode().height   );
+    XMapRaised(                 x11_display, RootWindow( x11_display, vi->screen )                                                                                                    );
+
+    dpyWidth    = vidModes[vidModeBest]->hdisplay;
+    dpyHeight   = vidModes[vidModeBest]->vdisplay;
+
+    XFree(vidModes);
+
+    winAttr.override_redirect   = True;
+    winAttr.event_mask          = ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask;
+
+    x11_window = XCreateWindow( x11_display,
+                                RootWindow( x11_display, vi->screen ),
+                                0, 0,
+                                dpyWidth, dpyHeight,
+                                0,
+                                vi->depth,
+                                InputOutput,
+                                vi->visual,
+                                CWBorderPixel | CWColormap | CWEventMask | CWOverrideRedirect, &winAttr );
+    XWarpPointer(               x11_display,
+                                None,
+                                x11_window,
+                                0, 0, 0, 0, 0, 0                                                        );
+    XMapRaised(                 x11_display, x11_window                                                 );
+    XGrabKeyboard(              x11_display, x11_window,
+                                True,
+                                GrabModeAsync, GrabModeAsync,
+                                CurrentTime                                                             );
+    XGrabPointer(               x11_display, x11_window,
+                                True, ButtonPressMask,
+                                GrabModeAsync, GrabModeAsync,
+                                x11_window,
+                                None,
+                                CurrentTime                                                             );
+
+        //x11_window = XCreateWindow(x11_display, RootWindow(x11_display, vi->screen), 0, 0, OS::get_singleton()->get_video_mode().width, OS::get_singleton()->get_video_mode().height, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel|CWColormap|CWEventMask, &swa);
 		ERR_FAIL_COND_V(!x11_window,ERR_UNCONFIGURED);
 		XMapWindow(x11_display, x11_window);
 		while(true) {
@@ -204,6 +306,16 @@ ContextGL_X11::~ContextGL_X11() {
 	memdelete( p );
 }
 
+void ContextGL_X11::Restore_Desktop(){
+
+    print_line("Debug: Restore Original Desktop Resolution");
+
+    XF86VidModeSwitchToMode(    x11_display, screenBackup, &desktopMode );
+    XF86VidModeSetViewPort(     x11_display, screenBackup, 0, 0         );
+
+    return;
+
+}
 
 #endif
 #endif
