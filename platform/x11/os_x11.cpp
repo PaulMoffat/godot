@@ -71,7 +71,8 @@ const char * OS_X11::get_video_driver_name(int p_driver) const {
 }
 OS::VideoMode OS_X11::get_default_video_mode() const {
 
-	return OS::VideoMode(800,600,false);
+    //return OS::VideoMode(800,600,false);
+    return OS::VideoMode(1024,768,false);
 }
 
 void OS_X11::initialize(const VideoMode& p_desired,int p_video_driver,int p_audio_driver) {
@@ -337,6 +338,8 @@ void OS_X11::initialize(const VideoMode& p_desired,int p_video_driver,int p_audi
 		
 }
 void OS_X11::finalize() {
+
+    context_gl->Restore_Desktop();
 
 	if(main_loop)
 		memdelete(main_loop);
