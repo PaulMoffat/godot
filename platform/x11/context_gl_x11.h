@@ -65,6 +65,8 @@ public:
 
 	virtual Error initialize();
 
+    void Restore_Desktop();
+
 	ContextGL_X11(::Display *p_x11_display,::Window &p_x11_window,const OS::VideoMode& p_default_video_mode,bool p_opengl_3_context);	
 	~ContextGL_X11();
 
